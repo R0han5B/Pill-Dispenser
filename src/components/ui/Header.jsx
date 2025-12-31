@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../AppIcon';
 import Button from './Button';
 
 const Header = ({ user, onLogout, isMobileMenuOpen, onMobileMenuToggle }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const getPageTitle = () => {
@@ -13,6 +14,8 @@ const Header = ({ user, onLogout, isMobileMenuOpen, onMobileMenuToggle }) => {
       '/patient-management': 'Patient Management',
       '/medication-schedules': 'Medication Schedules',
       '/activity-log': 'Activity Log',
+      '/profile': 'Profile',
+      '/settings': 'Settings',
       '/login': 'Login',
       '/register': 'Register'
     };
@@ -85,7 +88,7 @@ const Header = ({ user, onLogout, isMobileMenuOpen, onMobileMenuToggle }) => {
                   className="w-full px-4 py-2 text-left text-sm text-popover-foreground hover:bg-muted transition-colors duration-200 flex items-center space-x-2"
                   onClick={() => {
                     setShowUserMenu(false);
-                    // Handle profile navigation
+                    navigate('/profile');
                   }}
                 >
                   <Icon name="User" size={16} />
@@ -96,7 +99,7 @@ const Header = ({ user, onLogout, isMobileMenuOpen, onMobileMenuToggle }) => {
                   className="w-full px-4 py-2 text-left text-sm text-popover-foreground hover:bg-muted transition-colors duration-200 flex items-center space-x-2"
                   onClick={() => {
                     setShowUserMenu(false);
-                    // Handle settings navigation
+                    navigate('/settings');
                   }}
                 >
                   <Icon name="Settings" size={16} />

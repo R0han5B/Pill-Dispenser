@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+// src/pages/medication-schedules/index.jsx
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../lib/supabaseClient';
 import Header from '../../components/ui/Header';
 import Sidebar from '../../components/ui/Sidebar';
 import Icon from '../../components/AppIcon';
@@ -12,226 +14,207 @@ import NotificationPermission from './components/NotificationPermission';
 
 const MedicationSchedules = () => {
   const navigate = useNavigate();
+
+  // layout / UI states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // user state
+  const [user, setUser] = useState(null);
+  const [userId, setUserId] = useState(null);
+
+  // data states
+  const [schedules, setSchedules] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [filteredSchedules, setFilteredSchedules] = useState([]);
+
+  // modal / form states
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState(null);
-  const [schedules, setSchedules] = useState([]);
-  const [filteredSchedules, setFilteredSchedules] = useState([]);
+
+  // filters / UI control
   const [filters, setFilters] = useState({
     search: '',
     patient: '',
     status: '',
-    stock: ''
+    stock: '' // 'low' | 'critical' | 'normal' | ''
   });
 
-  // Mock user data
-  const user = {
-    name: "Dr. Sarah Johnson",
-    email: "sarah.johnson@healthcare.com",
-    role: "Primary Caregiver"
-  };
+  // loading / error
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Mock patients data
-  const patients = [
-    {
-      id: "1",
-      name: "Robert Chen",
-      age: 72,
-      conditions: ["Hypertension", "Diabetes"]
-    },
-    {
-      id: "2", 
-      name: "Maria Rodriguez",
-      age: 68,
-      conditions: ["Arthritis", "Heart Disease"]
-    },
-    {
-      id: "3",
-      name: "James Wilson",
-      age: 75,
-      conditions: ["COPD", "High Cholesterol"]
-    },
-    {
-      id: "4",
-      name: "Linda Thompson",
-      age: 70,
-      conditions: ["Osteoporosis", "Hypertension"]
-    }
-  ];
-
-  // Mock schedules data
-  const mockSchedules = [
-    {
-      id: "1",
-      patientId: "1",
-      patientName: "Robert Chen",
-      medicationName: "Metformin",
-      dosage: "500mg",
-      frequency: "twice-daily",
-      timing: "08:00",
-      nextDose: "08:00 AM",
-      instructions: "Take with breakfast",
-      currentStock: 15,
-      status: "pending",
-      deviceStatus: "online",
-      createdAt: "10/20/2025",
-      lastTaken: "10/22/2025 08:00 AM"
-    },
-    {
-      id: "2",
-      patientId: "1",
-      patientName: "Robert Chen", 
-      medicationName: "Lisinopril",
-      dosage: "10mg",
-      frequency: "daily",
-      timing: "20:00",
-      nextDose: "08:00 PM",
-      instructions: "Take before bedtime",
-      currentStock: 8,
-      status: "taken",
-      deviceStatus: "online",
-      createdAt: "10/18/2025",
-      lastTaken: "10/22/2025 08:00 PM"
-    },
-    {
-      id: "3",
-      patientId: "2",
-      patientName: "Maria Rodriguez",
-      medicationName: "Ibuprofen",
-      dosage: "200mg",
-      frequency: "as-needed",
-      timing: "12:00",
-      nextDose: "As needed",
-      instructions: "Take with food for pain",
-      currentStock: 25,
-      status: "pending",
-      deviceStatus: "offline",
-      createdAt: "10/19/2025",
-      lastTaken: "10/21/2025 12:30 PM"
-    },
-    {
-      id: "4",
-      patientId: "2",
-      patientName: "Maria Rodriguez",
-      medicationName: "Atorvastatin",
-      dosage: "20mg",
-      frequency: "daily",
-      timing: "21:00",
-      nextDose: "09:00 PM",
-      instructions: "Take with dinner",
-      currentStock: 3,
-      status: "missed",
-      deviceStatus: "online",
-      createdAt: "10/15/2025",
-      lastTaken: "10/20/2025 09:00 PM"
-    },
-    {
-      id: "5",
-      patientId: "3",
-      patientName: "James Wilson",
-      medicationName: "Albuterol Inhaler",
-      dosage: "2 puffs",
-      frequency: "as-needed",
-      timing: "06:00",
-      nextDose: "As needed",
-      instructions: "Use for breathing difficulty",
-      currentStock: 12,
-      status: "pending",
-      deviceStatus: "online",
-      createdAt: "10/16/2025",
-      lastTaken: "10/22/2025 02:15 PM"
-    },
-    {
-      id: "6",
-      patientId: "4",
-      patientName: "Linda Thompson",
-      medicationName: "Calcium Carbonate",
-      dosage: "500mg",
-      frequency: "twice-daily",
-      timing: "09:00",
-      nextDose: "09:00 AM",
-      instructions: "Take with meals",
-      currentStock: 30,
-      status: "taken",
-      deviceStatus: "online",
-      createdAt: "10/17/2025",
-      lastTaken: "10/23/2025 09:00 AM"
-    }
-  ];
-
+  // ---------- Fetch User ----------
   useEffect(() => {
-    setSchedules(mockSchedules);
-    setFilteredSchedules(mockSchedules);
-  }, []);
+    const fetchUser = async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) {
+          navigate('/login');
+          return;
+        }
 
-  // Filter schedules based on current filters
+        setUserId(authUser.id);
+
+        // Get user metadata - refresh to get latest
+        const { data: { user: refreshedUser } } = await supabase.auth.refreshSession();
+        const currentUser = refreshedUser || authUser;
+        
+        const name = currentUser.user_metadata?.name || currentUser.user_metadata?.full_name || authUser.email?.split('@')[0] || '';
+        const role = currentUser.user_metadata?.role || 'Caregiver';
+        
+        const userData = {
+          id: currentUser.id,
+          email: currentUser.email || '',
+          name: name,
+          role: role
+        };
+
+        setUser(userData);
+      } catch (error) {
+        console.error('Error fetching user:', error);
+      }
+    };
+
+    fetchUser();
+  }, [navigate]);
+
+  // ---------- Fetching ----------
+  const fetchPatients = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const { data, error } = await supabase
+        .from('patients')
+        .select('id, name, age')
+        .eq('user_id', userId)
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setPatients(data || []);
+    } catch (err) {
+      console.error('fetchPatients error', err);
+    }
+  }, [userId]);
+
+  const fetchSchedules = useCallback(async () => {
+    if (!userId) return;
+    try {
+      setLoading(true);
+      setError(null);
+      // Fetch relevant schedule fields - FILTERED BY USER
+      const { data, error } = await supabase
+        .from('medication_schedules')
+        .select(`
+          id,
+          patient_id,
+          patient_name,
+          medication_name,
+          dosage,
+          frequency,
+          timing,
+          next_dose,
+          instructions,
+          current_stock,
+          status,
+          device_status,
+          created_at,
+          last_taken
+        `)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSchedules(data || []);
+    } catch (err) {
+      console.error('fetchSchedules error', err);
+      setError('Failed to load schedules.');
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  // ---------- Realtime subscription ----------
   useEffect(() => {
-    let filtered = [...schedules];
+    if (!userId) return;
 
-    if (filters?.search) {
-      filtered = filtered?.filter(schedule =>
-        schedule?.medicationName?.toLowerCase()?.includes(filters?.search?.toLowerCase()) ||
-        schedule?.patientName?.toLowerCase()?.includes(filters?.search?.toLowerCase())
+    // initial fetch
+    fetchPatients();
+    fetchSchedules();
+
+    // Realtime subscription for medication_schedules
+    const channel = supabase
+      .channel('realtime:medication_schedules')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'medication_schedules' },
+        (payload) => {
+          // Only process if it's for current user
+          if (payload.new?.user_id === userId || payload.old?.user_id === userId) {
+            setSchedules(prev => {
+              if (!prev) prev = [];
+              switch (payload.eventType) {
+                case 'INSERT':
+                  return [payload.new, ...prev];
+                case 'UPDATE':
+                  return prev.map(s => (s.id === payload.new.id ? payload.new : s));
+                case 'DELETE':
+                  return prev.filter(s => s.id !== payload.old.id);
+                default:
+                  return prev;
+              }
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, fetchPatients, fetchSchedules]);
+
+  // ---------- Filters logic ----------
+  useEffect(() => {
+    let list = [...schedules];
+
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      list = list.filter(s =>
+        (s.medication_name || s.medication_name === 0 ? s.medication_name.toLowerCase() : '')
+          .includes(q) ||
+        (s.patient_name || '').toLowerCase().includes(q) ||
+        (s.instructions || '').toLowerCase().includes(q)
       );
     }
 
-    if (filters?.patient) {
-      filtered = filtered?.filter(schedule => schedule?.patientId === filters?.patient);
+    if (filters.patient) {
+      list = list.filter(s => String(s.patient_id) === String(filters.patient));
     }
 
-    if (filters?.status) {
-      filtered = filtered?.filter(schedule => schedule?.status === filters?.status);
+    if (filters.status) {
+      list = list.filter(s => s.status === filters.status);
     }
 
-    if (filters?.stock) {
-      switch (filters?.stock) {
+    if (filters.stock) {
+      switch (filters.stock) {
         case 'low':
-          filtered = filtered?.filter(schedule => schedule?.currentStock <= 10);
+          list = list.filter(s => (s.current_stock ?? 0) <= 10 && (s.current_stock ?? 0) > 5);
           break;
         case 'critical':
-          filtered = filtered?.filter(schedule => schedule?.currentStock <= 5);
+          list = list.filter(s => (s.current_stock ?? 0) <= 5);
           break;
         case 'normal':
-          filtered = filtered?.filter(schedule => schedule?.currentStock > 10);
+          list = list.filter(s => (s.current_stock ?? 0) > 10);
           break;
         default:
           break;
       }
     }
 
-    setFilteredSchedules(filtered);
+    setFilteredSchedules(list);
   }, [schedules, filters]);
 
-  const handleSidebarToggle = () => {
-    setIsSidebarCollapsed(!isSidebarCollapsed);
-  };
-
-  const handleMobileMenuToggle = () => {
-    setIsMobileMenuOpen(!isMobileMenuOpen);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    navigate('/login');
-  };
-
-  const handleFilterChange = (filterType, value) => {
-    setFilters(prev => ({
-      ...prev,
-      [filterType]: value
-    }));
-  };
-
-  const handleClearFilters = () => {
-    setFilters({
-      search: '',
-      patient: '',
-      status: '',
-      stock: ''
-    });
-  };
-
+  // ---------- Actions: create / update / delete / mark taken ----------
   const handleCreateSchedule = () => {
     setEditingSchedule(null);
     setIsFormOpen(true);
@@ -242,105 +225,130 @@ const MedicationSchedules = () => {
     setIsFormOpen(true);
   };
 
-  const handleDeleteSchedule = (scheduleId) => {
-    if (window.confirm('Are you sure you want to delete this schedule?')) {
-      setSchedules(prev => prev?.filter(s => s?.id !== scheduleId));
-      
-      // Show notification if available
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Schedule Deleted', {
-          body: 'Medication schedule has been successfully deleted.',
-          icon: '/favicon.ico'
-        });
-      }
+  const handleDeleteSchedule = async (scheduleId) => {
+    if (!window.confirm('Are you sure you want to delete this schedule?')) return;
+    try {
+      const { error } = await supabase.from('medication_schedules').delete().eq('id', scheduleId);
+      if (error) throw error;
+      setSchedules(prev => prev.filter(s => s.id !== scheduleId));
+    } catch (err) {
+      console.error('delete schedule error', err);
+      alert('Failed to delete schedule.');
     }
   };
 
-  const handleMarkTaken = (scheduleId) => {
-    setSchedules(prev => prev?.map(schedule => {
-      if (schedule?.id === scheduleId) {
-        const updatedSchedule = {
-          ...schedule,
-          status: 'taken',
-          lastTaken: new Date()?.toLocaleString(),
-          currentStock: Math.max(0, schedule?.currentStock - 1)
-        };
-        
-        // Show notification if available
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('Medication Taken', {
-            body: `${schedule.medicationName} marked as taken for ${schedule.patientName}`,
-            icon: '/favicon.ico'
-          });
-        }
-        
-        return updatedSchedule;
-      }
-      return schedule;
-    }));
-  };
+  const handleMarkTaken = async (scheduleId) => {
+    try {
+      const schedule = schedules.find(s => s.id === scheduleId);
+      if (!schedule) return;
 
-  const handleMarkUntaken = (scheduleId) => {
-    setSchedules(prev => prev?.map(schedule => {
-      if (schedule?.id === scheduleId) {
-        return {
-          ...schedule,
-          status: 'pending',
-          currentStock: schedule?.currentStock + 1
-        };
-      }
-      return schedule;
-    }));
-  };
+      const updated = {
+        status: 'taken',
+        last_taken: new Date().toISOString(),
+        current_stock: Math.max(0, (schedule.current_stock ?? 0) - 1),
+      };
 
-  const handleFormSubmit = (scheduleData) => {
-    if (editingSchedule) {
-      // Update existing schedule
-      setSchedules(prev => prev?.map(s => 
-        s?.id === editingSchedule?.id ? scheduleData : s
-      ));
-      
-      // Show notification if available
+      const { error } = await supabase
+        .from('medication_schedules')
+        .update(updated)
+        .eq('id', scheduleId);
+
+      if (error) throw error;
+
+      // trigger notification
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Schedule Updated', {
-          body: `${scheduleData.medicationName} schedule has been updated.`,
+        new Notification('Medication Taken', {
+          body: `${schedule.medication_name} marked taken for ${schedule.patient_name}`,
           icon: '/favicon.ico'
         });
       }
-    } else {
-      // Add new schedule
-      setSchedules(prev => [...prev, scheduleData]);
-      
-      // Show notification if available
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Schedule Created', {
-          body: `New medication schedule created for ${scheduleData.patientName}`,
-          icon: '/favicon.ico'
-        });
-      }
+    } catch (err) {
+      console.error('markTaken error', err);
+      alert('Could not mark as taken.');
     }
-    
-    setIsFormOpen(false);
-    setEditingSchedule(null);
   };
 
-  // Alert counts for sidebar
+  const handleMarkUntaken = async (scheduleId) => {
+    try {
+      const schedule = schedules.find(s => s.id === scheduleId);
+      if (!schedule) return;
+
+      const updated = {
+        status: 'pending',
+        current_stock: (schedule.current_stock ?? 0) + 1,
+      };
+
+      const { error } = await supabase
+        .from('medication_schedules')
+        .update(updated)
+        .eq('id', scheduleId);
+
+      if (error) throw error;
+    } catch (err) {
+      console.error('markUntaken error', err);
+      alert('Could not mark as untaken.');
+    }
+  };
+
+  const handleFormSubmit = async (formData) => {
+    try {
+      const dataWithUserId = { ...formData, user_id: userId };
+
+      if (editingSchedule) {
+        // update
+        const { error } = await supabase
+          .from('medication_schedules')
+          .update(dataWithUserId)
+          .eq('id', editingSchedule.id);
+        if (error) throw error;
+      } else {
+        // insert
+        const insertData = {
+          ...dataWithUserId,
+          created_at: new Date().toISOString()
+        };
+        const { error } = await supabase.from('medication_schedules').insert([insertData]);
+        if (error) throw error;
+      }
+      setIsFormOpen(false);
+      setEditingSchedule(null);
+    } catch (err) {
+      console.error('form submit error', err);
+      alert('Failed to save schedule.');
+    }
+  };
+
+  // ---------- Helper UI handlers ----------
+  const handleSidebarToggle = () => setIsSidebarCollapsed(!isSidebarCollapsed);
+  const handleMobileMenuToggle = () => setIsMobileMenuOpen(!isMobileMenuOpen);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login', { replace: true });
+  };
+
+  const handleFilterChange = (type, value) =>
+    setFilters(prev => ({ ...prev, [type]: value }));
+
+  const handleClearFilters = () =>
+    setFilters({ search: '', patient: '', status: '', stock: '' });
+
+  // ---------- Derived / stats ----------
   const alertCounts = {
-    schedules: schedules?.filter(s => s?.currentStock <= 10)?.length,
-    activity: schedules?.filter(s => s?.status === 'missed')?.length
+    schedules: schedules.filter(s => (s.current_stock ?? 0) <= 10).length,
+    activity: schedules.filter(s => s.status === 'missed').length
   };
 
+  // ---------- Render ----------
   return (
     <div className="min-h-screen bg-background">
-      {/* Sidebar */}
       <Sidebar
         isCollapsed={isMobileMenuOpen}
         onToggle={handleMobileMenuToggle}
         alertCounts={alertCounts}
       />
-      {/* Main Content */}
+
       <div className={`transition-all duration-300 ${isSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-280'}`}>
-        {/* Header */}
         <Header
           user={user}
           onLogout={handleLogout}
@@ -348,55 +356,73 @@ const MedicationSchedules = () => {
           onMobileMenuToggle={handleMobileMenuToggle}
         />
 
-        {/* Page Content */}
         <main className="pt-16 p-6">
           <div className="max-w-7xl mx-auto">
-            {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
               <div>
                 <h1 className="text-2xl font-bold text-foreground mb-2">Medication Schedules</h1>
                 <p className="text-muted-foreground">
-                  Manage medication schedules, track dispensing, and monitor stock levels
+                  Manage medication schedules, track dispensing, and monitor stock levels.
                 </p>
               </div>
-              
-              <Button
-                variant="default"
-                onClick={handleCreateSchedule}
-                iconName="Plus"
-                iconPosition="left"
-                className="mt-4 sm:mt-0"
-              >
-                Create New Schedule
-              </Button>
+
+              <div className="flex items-center gap-3 mt-4 sm:mt-0">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate('/patient-management')}
+                  iconName="Users"
+                  iconPosition="left"
+                >
+                  Patients
+                </Button>
+
+                <Button
+                  variant="default"
+                  onClick={handleCreateSchedule}
+                  iconName="Plus"
+                  iconPosition="left"
+                >
+                  Create New Schedule
+                </Button>
+              </div>
             </div>
 
-            {/* Notification Permission Banner */}
             <NotificationPermission />
 
-            {/* Stats Overview */}
             <StatsOverview schedules={schedules} />
 
-            {/* Filter Controls */}
             <FilterControls
               filters={filters}
               onFilterChange={handleFilterChange}
               onClearFilters={handleClearFilters}
               patients={patients}
-              scheduleCount={filteredSchedules?.length}
+              scheduleCount={filteredSchedules.length}
             />
 
-            {/* Schedules Grid */}
-            {filteredSchedules?.length > 0 ? (
+            {/* Content */}
+            {loading ? (
+              <div className="py-12">
+                <div className="animate-pulse space-y-4">
+                  <div className="h-6 bg-muted rounded w-1/3" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+                    {[...Array(6)].map((_, i) => (
+                      <div key={i} className="bg-card border border-border rounded-lg p-4 h-40" />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : error ? (
+              <div className="py-12 text-center text-red-600">{error}</div>
+            ) : filteredSchedules.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                {filteredSchedules?.map(schedule => (
+                {filteredSchedules.map(schedule => (
                   <ScheduleCard
-                    key={schedule?.id}
+                    key={schedule.id}
                     schedule={schedule}
-                    onEdit={handleEditSchedule}
-                    onDelete={handleDeleteSchedule}
-                    onMarkTaken={handleMarkTaken}
-                    onMarkUntaken={handleMarkUntaken}
+                    onEdit={() => handleEditSchedule(schedule)}
+                    onDelete={() => handleDeleteSchedule(schedule.id)}
+                    onMarkTaken={() => handleMarkTaken(schedule.id)}
+                    onMarkUntaken={() => handleMarkUntaken(schedule.id)}
                   />
                 ))}
               </div>
@@ -407,17 +433,12 @@ const MedicationSchedules = () => {
                 </div>
                 <h3 className="text-lg font-medium text-foreground mb-2">No schedules found</h3>
                 <p className="text-muted-foreground mb-4">
-                  {Object.values(filters)?.some(f => f) 
-                    ? 'Try adjusting your filters or search terms' :'Create your first medication schedule to get started'
-                  }
+                  {Object.values(filters).some(f => f)
+                    ? 'Try adjusting your filters or search terms.'
+                    : 'Create your first medication schedule to get started.'}
                 </p>
-                {!Object.values(filters)?.some(f => f) && (
-                  <Button
-                    variant="default"
-                    onClick={handleCreateSchedule}
-                    iconName="Plus"
-                    iconPosition="left"
-                  >
+                {!Object.values(filters).some(f => f) && (
+                  <Button variant="default" onClick={handleCreateSchedule} iconName="Plus" iconPosition="left">
                     Create Schedule
                   </Button>
                 )}
@@ -426,7 +447,7 @@ const MedicationSchedules = () => {
           </div>
         </main>
       </div>
-      {/* Schedule Form Modal */}
+
       <ScheduleForm
         isOpen={isFormOpen}
         onClose={() => {

@@ -1,23 +1,58 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ActivityEntry from './ActivityEntry';
 import Button from '../../../components/ui/Button';
 import Icon from '../../../components/AppIcon';
+import { supabase } from '../../../lib/supabaseClient'; // ✅ make sure this path is correct
 
-const ActivityFeed = ({ activities, loading, onLoadMore, hasMore }) => {
+const ActivityFeed = ({ activities: initialActivities, loading, onLoadMore, hasMore }) => {
+  const [activities, setActivities] = useState(initialActivities || []);
   const [selectedActivity, setSelectedActivity] = useState(null);
+  const [realtimeLoading, setRealtimeLoading] = useState(true);
 
-  const handleViewDetails = (activity) => {
-    setSelectedActivity(activity);
-  };
+  // ✅ Load initial activities from props or Supabase later
+  useEffect(() => {
+    setActivities(initialActivities || []);
+    setRealtimeLoading(false);
+  }, [initialActivities]);
 
-  const closeDetails = () => {
-    setSelectedActivity(null);
-  };
+  // ✅ Real-time listener for Supabase changes
+  useEffect(() => {
+    const channel = supabase
+      .channel('realtime:activities')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'activities' },
+        (payload) => {
+          console.log('Realtime event received:', payload);
 
-  if (loading && activities?.length === 0) {
+          setActivities((prev) => {
+            let updated = [...prev];
+
+            if (payload.eventType === 'INSERT') {
+              updated = [payload.new, ...updated];
+            } else if (payload.eventType === 'UPDATE') {
+              updated = updated.map((a) => (a.id === payload.new.id ? payload.new : a));
+            } else if (payload.eventType === 'DELETE') {
+              updated = updated.filter((a) => a.id !== payload.old.id);
+            }
+            return updated;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const handleViewDetails = (activity) => setSelectedActivity(activity);
+  const closeDetails = () => setSelectedActivity(null);
+
+  if ((loading || realtimeLoading) && activities?.length === 0) {
     return (
       <div className="space-y-4">
-        {[...Array(6)]?.map((_, index) => (
+        {[...Array(6)].map((_, index) => (
           <div key={index} className="bg-card border border-border rounded-lg p-4">
             <div className="flex items-start space-x-4">
               <div className="w-10 h-10 bg-muted rounded-full animate-shimmer"></div>
@@ -41,10 +76,10 @@ const ActivityFeed = ({ activities, loading, onLoadMore, hasMore }) => {
         </div>
         <h3 className="text-lg font-semibold text-foreground mb-2">No Activities Found</h3>
         <p className="text-muted-foreground mb-6">
-          No activity records match your current filters. Try adjusting your search criteria or check back later.
+          No activity records yet. Add or trigger events to see live updates here.
         </p>
         <Button variant="outline" iconName="RefreshCw" iconPosition="left">
-          Refresh Activities
+          Refresh
         </Button>
       </div>
     );
@@ -53,15 +88,10 @@ const ActivityFeed = ({ activities, loading, onLoadMore, hasMore }) => {
   return (
     <>
       <div className="space-y-4">
-        {activities?.map((activity) => (
-          <ActivityEntry
-            key={activity?.id}
-            activity={activity}
-            onViewDetails={handleViewDetails}
-          />
+        {activities.map((activity) => (
+          <ActivityEntry key={activity?.id} activity={activity} onViewDetails={handleViewDetails} />
         ))}
 
-        {/* Load More Button */}
         {hasMore && (
           <div className="flex justify-center pt-6">
             <Button
@@ -84,26 +114,19 @@ const ActivityFeed = ({ activities, loading, onLoadMore, hasMore }) => {
           </div>
         )}
       </div>
+
       {/* Activity Details Modal */}
       {selectedActivity && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-soft z-1100 flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
             <div className="flex items-center justify-between p-6 border-b border-border">
               <h2 className="text-lg font-semibold text-foreground">Activity Details</h2>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={closeDetails}
-                iconName="X"
-              >
+              <Button variant="ghost" size="icon" onClick={closeDetails} iconName="X">
                 <span className="sr-only">Close</span>
               </Button>
             </div>
 
-            {/* Modal Content */}
             <div className="p-6 space-y-6">
-              {/* Basic Information */}
               <div>
                 <h3 className="text-sm font-semibold text-foreground mb-3">Event Information</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
@@ -130,7 +153,6 @@ const ActivityFeed = ({ activities, loading, onLoadMore, hasMore }) => {
                 </div>
               </div>
 
-              {/* Patient & Medication Details */}
               {(selectedActivity?.patientName || selectedActivity?.medicationName) && (
                 <div>
                   <h3 className="text-sm font-semibold text-foreground mb-3">Patient & Medication</h3>
@@ -163,7 +185,6 @@ const ActivityFeed = ({ activities, loading, onLoadMore, hasMore }) => {
                 </div>
               )}
 
-              {/* Description */}
               <div>
                 <h3 className="text-sm font-semibold text-foreground mb-3">Description</h3>
                 <p className="text-sm text-foreground leading-relaxed bg-muted p-4 rounded-lg">
@@ -171,7 +192,6 @@ const ActivityFeed = ({ activities, loading, onLoadMore, hasMore }) => {
                 </p>
               </div>
 
-              {/* Additional Details */}
               {selectedActivity?.additionalData && (
                 <div>
                   <h3 className="text-sm font-semibold text-foreground mb-3">Additional Information</h3>
@@ -184,7 +204,6 @@ const ActivityFeed = ({ activities, loading, onLoadMore, hasMore }) => {
               )}
             </div>
 
-            {/* Modal Footer */}
             <div className="flex justify-end space-x-3 p-6 border-t border-border">
               <Button variant="outline" onClick={closeDetails}>
                 Close

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from "../../../lib/supabaseClient";
 import Icon from '../../../components/AppIcon';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
@@ -29,11 +30,11 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
       setFormData({
         name: patient?.name || '',
         age: patient?.age || '',
-        medicalConditions: patient?.medicalConditions || [],
-        emergencyContact: patient?.emergencyContact || {
-          name: '',
-          phone: '',
-          relationship: ''
+        medicalConditions: patient?.medical_conditions || [],
+        emergencyContact: {
+          name: patient?.emergency_contact_name || '',
+          phone: patient?.emergency_contact_phone || '',
+          relationship: patient?.emergency_contact_relationship || ''
         }
       });
     } else {
@@ -54,31 +55,13 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
   const validateForm = () => {
     const newErrors = {};
 
-    if (!formData?.name?.trim()) {
-      newErrors.name = 'Patient name is required';
-    }
-
-    if (!formData?.age || formData?.age < 1 || formData?.age > 120) {
-      newErrors.age = 'Please enter a valid age (1-120)';
-    }
-
-    if (formData?.medicalConditions?.length === 0) {
-      newErrors.medicalConditions = 'At least one medical condition is required';
-    }
-
-    if (!formData?.emergencyContact?.name?.trim()) {
-      newErrors.emergencyContactName = 'Emergency contact name is required';
-    }
-
-    if (!formData?.emergencyContact?.phone?.trim()) {
-      newErrors.emergencyContactPhone = 'Emergency contact phone is required';
-    } else if (!/^\+?[\d\s\-\(\)]{10,}$/?.test(formData?.emergencyContact?.phone)) {
-      newErrors.emergencyContactPhone = 'Please enter a valid phone number';
-    }
-
-    if (!formData?.emergencyContact?.relationship?.trim()) {
-      newErrors.emergencyContactRelationship = 'Relationship is required';
-    }
+    if (!formData?.name?.trim()) newErrors.name = 'Patient name is required';
+    if (!formData?.age || formData?.age < 1 || formData?.age > 120) newErrors.age = 'Please enter a valid age (1-120)';
+    if (formData?.medicalConditions?.length === 0) newErrors.medicalConditions = 'At least one medical condition is required';
+    if (!formData?.emergencyContact?.name?.trim()) newErrors.emergencyContactName = 'Emergency contact name is required';
+    if (!formData?.emergencyContact?.phone?.trim()) newErrors.emergencyContactPhone = 'Emergency contact phone is required';
+    else if (!/^\+?[\d\s\-\(\)]{10,}$/?.test(formData?.emergencyContact?.phone)) newErrors.emergencyContactPhone = 'Please enter a valid phone number';
+    if (!formData?.emergencyContact?.relationship?.trim()) newErrors.emergencyContactRelationship = 'Relationship is required';
 
     setErrors(newErrors);
     return Object.keys(newErrors)?.length === 0;
@@ -121,29 +104,41 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
-    
-    if (!validateForm()) {
-      return;
-    }
 
+    if (!validateForm()) return;
     setIsSubmitting(true);
-    
+
     try {
       const patientData = {
-        ...formData,
-        age: parseInt(formData?.age),
-        id: patient?.id || Date.now(),
-        createdAt: patient?.createdAt || new Date()?.toISOString(),
-        updatedAt: new Date()?.toISOString(),
+        name: formData.name,
+        age: parseInt(formData.age),
+        medical_conditions: formData.medicalConditions,
+        emergency_contact_name: formData.emergencyContact.name,
+        emergency_contact_phone: formData.emergencyContact.phone,
+        emergency_contact_relationship: formData.emergencyContact.relationship,
         avatar: patient?.avatar || `https://randomuser.me/api/portraits/${Math.random() > 0.5 ? 'men' : 'women'}/${Math.floor(Math.random() * 99) + 1}.jpg`,
-        avatarAlt: `Professional headshot of ${formData?.name}`,
-        activeSchedules: patient?.activeSchedules || 0,
-        compliance: patient?.compliance || 85
+        created_at: patient?.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
 
-      await onSave(patientData);
+      let result;
+      if (patient?.id) {
+        result = await supabase
+          .from('patients')
+          .update(patientData)
+          .eq('id', patient.id);
+      } else {
+        result = await supabase.from('patients').insert([patientData]);
+      }
+
+      if (result.error) throw result.error;
+
+      console.log('✅ Patient saved to Supabase:', result.data);
+      onSave && onSave(result.data?.[0] || patientData);
+      onCancel();
     } catch (error) {
-      console.error('Error saving patient:', error);
+      console.error('❌ Error saving patient:', error.message);
+      alert('Failed to save patient to Supabase. Check console for details.');
     } finally {
       setIsSubmitting(false);
     }
@@ -154,26 +149,18 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-soft z-1200 flex items-center justify-center p-4">
       <div className="bg-card border border-border rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border">
           <h2 className="text-xl font-semibold text-foreground">
             {patient ? 'Edit Patient' : 'Add New Patient'}
           </h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onCancel}
-          >
+          <Button variant="ghost" size="icon" onClick={onCancel}>
             <Icon name="X" size={20} />
           </Button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Basic Information */}
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-foreground">Basic Information</h3>
-            
             <Input
               label="Patient Name"
               type="text"
@@ -183,7 +170,6 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
               error={errors?.name}
               required
             />
-
             <Input
               label="Age"
               type="number"
@@ -197,11 +183,8 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
             />
           </div>
 
-          {/* Medical Conditions */}
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-foreground">Medical Conditions</h3>
-            
-            {/* Add Condition */}
             <div className="flex space-x-2">
               <Input
                 placeholder="Add medical condition"
@@ -219,17 +202,16 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
               </Button>
             </div>
 
-            {/* Common Conditions */}
             <div>
               <p className="text-sm text-muted-foreground mb-2">Common conditions:</p>
               <div className="flex flex-wrap gap-2">
-                {commonConditions?.map((condition) => (
+                {commonConditions.map((condition) => (
                   <button
                     key={condition}
                     type="button"
                     onClick={() => addCondition(condition)}
                     disabled={formData?.medicalConditions?.includes(condition)}
-                    className="px-3 py-1 text-xs bg-secondary/10 text-secondary rounded-full hover:bg-secondary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3 py-1 text-xs bg-secondary/10 text-secondary rounded-full hover:bg-secondary/20 transition-colors disabled:opacity-50"
                   >
                     {condition}
                   </button>
@@ -237,7 +219,6 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
               </div>
             </div>
 
-            {/* Selected Conditions */}
             {formData?.medicalConditions?.length > 0 && (
               <div>
                 <p className="text-sm font-medium text-foreground mb-2">Selected conditions:</p>
@@ -260,16 +241,11 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
                 </div>
               </div>
             )}
-
-            {errors?.medicalConditions && (
-              <p className="text-sm text-error">{errors?.medicalConditions}</p>
-            )}
+            {errors?.medicalConditions && <p className="text-sm text-error">{errors?.medicalConditions}</p>}
           </div>
 
-          {/* Emergency Contact */}
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-foreground">Emergency Contact</h3>
-            
             <Input
               label="Contact Name"
               type="text"
@@ -279,7 +255,6 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
               error={errors?.emergencyContactName}
               required
             />
-
             <Input
               label="Phone Number"
               type="tel"
@@ -289,7 +264,6 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
               error={errors?.emergencyContactPhone}
               required
             />
-
             <Input
               label="Relationship"
               type="text"
@@ -301,22 +275,11 @@ const PatientForm = ({ patient, onSave, onCancel, isOpen }) => {
             />
           </div>
 
-          {/* Form Actions */}
           <div className="flex justify-end space-x-3 pt-6 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onCancel}
-              disabled={isSubmitting}
-            >
+            <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              loading={isSubmitting}
-              iconName="Save"
-              iconPosition="left"
-            >
+            <Button type="submit" loading={isSubmitting} iconName="Save" iconPosition="left">
               {patient ? 'Update Patient' : 'Add Patient'}
             </Button>
           </div>

@@ -1,175 +1,164 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../lib/supabaseClient';
+import Header from '../../components/ui/Header';
+import Sidebar from '../../components/ui/Sidebar';
 import MetricsCard from './components/MetricsCard';
-import ActivityFeed from './components/ActivityFeed';
 import DeviceStatus from './components/DeviceStatus';
 import QuickActions from './components/QuickActions';
 import NotificationPrompt from './components/NotificationPrompt';
+import ActivityFeed from '../activity-log/components/ActivityEntry';
+import toast from 'react-hot-toast';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
+  
+  // UI State
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  // User State
+  const [user, setUser] = useState(null);
+  const [userId, setUserId] = useState(null);
+  
   const [metrics, setMetrics] = useState({
     totalSchedules: 0,
     dispensedToday: 0,
     lowStockAlerts: 0,
     totalPatients: 0
   });
-
   const [activities, setActivities] = useState([]);
   const [devices, setDevices] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data initialization
+  // Fetch user profile
   useEffect(() => {
-    // Initialize metrics
-    setMetrics({
-      totalSchedules: 24,
-      dispensedToday: 18,
-      lowStockAlerts: 3,
-      totalPatients: 8
-    });
-
-    // Initialize recent activities
-    const mockActivities = [
-      {
-        id: 1,
-        type: 'dispensed',
-        title: 'Medication Dispensed',
-        description: 'Lisinopril 10mg dispensed to John Smith',
-        timestamp: new Date(Date.now() - 300000) // 5 minutes ago
-      },
-      {
-        id: 2,
-        type: 'low_stock',
-        title: 'Low Stock Alert',
-        description: 'Metformin 500mg - Only 8 pills remaining',
-        timestamp: new Date(Date.now() - 900000) // 15 minutes ago
-      },
-      {
-        id: 3,
-        type: 'missed',
-        title: 'Missed Medication',
-        description: 'Mary Johnson missed evening dose of Atorvastatin',
-        timestamp: new Date(Date.now() - 1800000) // 30 minutes ago
-      },
-      {
-        id: 4,
-        type: 'dispensed',
-        title: 'Medication Dispensed',
-        description: 'Amlodipine 5mg dispensed to Robert Davis',
-        timestamp: new Date(Date.now() - 2700000) // 45 minutes ago
-      },
-      {
-        id: 5,
-        type: 'connected',
-        title: 'Device Connected',
-        description: 'ESP32 Device #001 came online',
-        timestamp: new Date(Date.now() - 3600000) // 1 hour ago
-      },
-      {
-        id: 6,
-        type: 'added',
-        title: 'New Patient Added',
-        description: 'Sarah Wilson profile created successfully',
-        timestamp: new Date(Date.now() - 7200000) // 2 hours ago
-      }
-    ];
-    setActivities(mockActivities);
-
-    // Initialize device status
-    const mockDevices = [
-      {
-        id: 'esp32_001',
-        name: 'ESP32 Device #001',
-        location: 'Living Room - Main Unit',
-        status: 'online',
-        lastSeen: new Date(Date.now() - 120000) // 2 minutes ago
-      },
-      {
-        id: 'esp32_002',
-        name: 'ESP32 Device #002',
-        location: 'Bedroom - Secondary Unit',
-        status: 'online',
-        lastSeen: new Date(Date.now() - 300000) // 5 minutes ago
-      },
-      {
-        id: 'esp32_003',
-        name: 'ESP32 Device #003',
-        location: 'Kitchen - Backup Unit',
-        status: 'offline',
-        lastSeen: new Date(Date.now() - 1800000) // 30 minutes ago
-      }
-    ];
-    setDevices(mockDevices);
-
-    // Simulate real-time updates
-    const interval = setInterval(() => {
-      // Randomly update device status
-      setDevices(prevDevices => 
-        prevDevices?.map(device => ({
-          ...device,
-          status: Math.random() > 0.1 ? 'online' : 'offline',
-          lastSeen: device?.status === 'online' ? new Date() : device?.lastSeen
-        }))
-      );
-
-      // Occasionally add new activities
-      if (Math.random() > 0.7) {
-        const newActivity = {
-          id: Date.now(),
-          type: Math.random() > 0.5 ? 'dispensed' : 'connected',
-          title: Math.random() > 0.5 ? 'Medication Dispensed' : 'Device Status Update',
-          description: Math.random() > 0.5 
-            ? 'Automated medication dispensing completed' 
-            : 'ESP32 device connectivity verified',
-          timestamp: new Date()
-        };
-        
-        setActivities(prev => [newActivity, ...prev?.slice(0, 9)]);
-        
-        // Update metrics
-        if (newActivity?.type === 'dispensed') {
-          setMetrics(prev => ({
-            ...prev,
-            dispensedToday: prev?.dispensedToday + 1
-          }));
+    const fetchUser = async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) {
+          navigate('/login');
+          return;
         }
-      }
-    }, 30000); // Update every 30 seconds
 
-    return () => clearInterval(interval);
-  }, []);
+        setUserId(authUser.id);
+
+        // Get user metadata - refresh to get latest
+        const { data: { user: refreshedUser } } = await supabase.auth.refreshSession();
+        const user = refreshedUser || authUser;
+        
+        const name = user.user_metadata?.name || user.user_metadata?.full_name || authUser.email?.split('@')[0] || '';
+        const role = user.user_metadata?.role || 'Caregiver';
+        
+        const userData = {
+          id: user.id,
+          email: user.email || '',
+          name: name,
+          role: role
+        };
+
+        setUser(userData);
+      } catch (error) {
+        console.error('Error fetching user:', error);
+      }
+    };
+
+    fetchUser();
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!userId) return; // Wait for userId to be set
+
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      try {
+        // 🧩 Fetch counts - FILTERED BY CURRENT USER
+        const { count: patientCount } = await supabase
+          .from('patients')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId); // Filter by current user
+
+        const { count: scheduleCount } = await supabase
+          .from('schedules')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId); // Filter by current user
+
+        const { count: lowStockCount } = await supabase
+          .from('medications')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId) // Filter by current user
+          .lte('stock', 10);
+
+        const { data: dispensedToday } = await supabase
+          .from('dispense_logs')
+          .select('*')
+          .eq('user_id', userId) // Filter by current user
+          .gte('created_at', new Date().toISOString().split('T')[0]);
+
+        // 🧩 Fetch latest activities - FILTERED BY CURRENT USER
+        const { data: activityData } = await supabase
+          .from('activity_logs')
+          .select('*')
+          .eq('user_id', userId) // Filter by current user
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        // 🧩 Fetch device status - FILTERED BY CURRENT USER
+        const { data: deviceData } = await supabase
+          .from('devices')
+          .select('*')
+          .eq('user_id', userId); // Filter by current user
+
+        setMetrics({
+          totalSchedules: scheduleCount || 0,
+          dispensedToday: dispensedToday?.length || 0,
+          lowStockAlerts: lowStockCount || 0,
+          totalPatients: patientCount || 0
+        });
+
+        setActivities(activityData || []);
+        setDevices(deviceData || []);
+      } catch (err) {
+        console.error('Dashboard fetch error:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [userId]); // Dependency on userId
+
+  // Logout handler
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login');
+  };
 
   const metricsData = [
     {
       title: 'Total Schedules',
-      value: metrics?.totalSchedules,
+      value: metrics.totalSchedules,
       icon: 'Calendar',
-      color: 'blue',
-      trend: 'up',
-      trendValue: '+2 this week'
+      color: 'blue'
     },
     {
       title: 'Dispensed Today',
-      value: metrics?.dispensedToday,
+      value: metrics.dispensedToday,
       icon: 'CheckCircle',
-      color: 'green',
-      trend: 'up',
-      trendValue: '75% completion'
+      color: 'green'
     },
     {
       title: 'Low Stock Alerts',
-      value: metrics?.lowStockAlerts,
+      value: metrics.lowStockAlerts,
       icon: 'AlertTriangle',
-      color: 'red',
-      trend: 'down',
-      trendValue: '-1 from yesterday'
+      color: 'red'
     },
     {
       title: 'Total Patients',
-      value: metrics?.totalPatients,
+      value: metrics.totalPatients,
       icon: 'Users',
-      color: 'purple',
-      trend: 'up',
-      trendValue: '+1 this month'
+      color: 'purple'
     }
   ];
 
@@ -177,76 +166,95 @@ const Dashboard = () => {
     <>
       <Helmet>
         <title>Dashboard - Smart Pill Dispenser</title>
-        <meta name="description" content="Comprehensive medication management dashboard with real-time monitoring and alerts" />
       </Helmet>
+
       <div className="min-h-screen bg-background">
-        <div className="max-w-7xl mx-auto p-6 space-y-6">
-          {/* Page Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground mb-2">Dashboard</h1>
-            <p className="text-muted-foreground">
-              Monitor medication schedules, device status, and patient compliance in real-time
-            </p>
-          </div>
+        <Sidebar
+          isCollapsed={isMobileMenuOpen}
+          onToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          alertCounts={{ schedules: 3, activity: 2 }}
+        />
 
-          {/* Notification Prompt */}
-          <NotificationPrompt />
+        <div
+          className={`transition-all duration-300 ${
+            isSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-280'
+          }`}
+        >
+          <Header
+            user={user}
+            onLogout={handleLogout}
+            isMobileMenuOpen={isMobileMenuOpen}
+            onMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          />
 
-          {/* Metrics Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {metricsData?.map((metric, index) => (
-              <MetricsCard
-                key={index}
-                title={metric?.title}
-                value={metric?.value}
-                icon={metric?.icon}
-                color={metric?.color}
-                trend={metric?.trend}
-                trendValue={metric?.trendValue}
-              />
-            ))}
-          </div>
-
-          {/* Main Content Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Activity Feed */}
-            <div className="lg:col-span-1">
-              <ActivityFeed activities={activities} />
-            </div>
-
-            {/* Device Status */}
-            <div className="lg:col-span-1">
-              <DeviceStatus devices={devices} />
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <QuickActions />
-
-          {/* System Status Footer */}
-          <div className="bg-card border border-border rounded-lg p-4">
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse-status" />
-                  <span className="text-muted-foreground">System Status: Online</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-muted-foreground">Last Updated:</span>
-                  <span className="font-medium text-foreground">
-                    {new Date()?.toLocaleTimeString('en-US', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit'
-                    })}
-                  </span>
-                </div>
+          <main className="pt-16 p-6">
+            <div className="max-w-7xl mx-auto space-y-6">
+              <div className="mb-8">
+                <h1 className="text-3xl font-bold text-foreground mb-2">Dashboard</h1>
+                <p className="text-muted-foreground">
+                  Real-time overview of your medication schedules, devices, and patient data.
+                </p>
               </div>
-              <div className="text-muted-foreground">
-                Smart Pill Dispenser v2.1.0
-              </div>
+
+              <NotificationPrompt />
+
+              {/* Loading / No Data */}
+              {loading ? (
+                <div className="text-center text-gray-500 py-10">Loading data...</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {metricsData.map((metric, index) => (
+                      <MetricsCard
+                        key={index}
+                        title={metric.title}
+                        value={metric.value}
+                        icon={metric.icon}
+                        color={metric.color}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Activities + Devices */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                    <div className="lg:col-span-1">
+                      {activities?.length > 0 ? (
+                        <ActivityFeed activities={activities} />
+                      ) : (
+                        <div className="text-center text-gray-500 p-8 border rounded-lg">
+                          No recent activities
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="lg:col-span-1">
+                      {devices?.length > 0 ? (
+                        <DeviceStatus devices={devices} />
+                      ) : (
+                        <div className="text-center text-gray-500 p-8 border rounded-lg">
+                          No device data available
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <QuickActions />
+
+                  <div className="bg-card border border-border rounded-lg p-4 mt-6">
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse-status" />
+                        <span className="text-muted-foreground">System Online</span>
+                      </div>
+                      <span className="text-muted-foreground">
+                        Last updated {new Date().toLocaleTimeString()}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
-          </div>
+          </main>
         </div>
       </div>
     </>
