@@ -29,140 +29,72 @@ const RegistrationForm = () => {
     return strength;
   };
 
-  const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    const inputValue = type === 'checkbox' ? checked : value;
-<<<<<<< HEAD
-=======
+const handleInputChange = (e) => {
+  const { name, value, type, checked } = e.target;
+  const inputValue = type === 'checkbox' ? checked : value;
 
-    setFormData(prev => ({
-      ...prev,
-      [name]: inputValue
-    }));
->>>>>>> 52008b10f5f6f0c87a15a271af4318e218f184bc
+  setFormData(prev => ({ ...prev, [name]: inputValue }));
 
-    setFormData(prev => ({ ...prev, [name]: inputValue }));
+  if (name === 'password') setPasswordStrength(validatePassword(value));
 
-<<<<<<< HEAD
-    if (name === 'password') setPasswordStrength(validatePassword(value));
+  if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
+};
 
-    if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
-=======
-    if (errors?.[name]) {
-      setErrors(prev => ({
-        ...prev,
-        [name]: ''
-      }));
-    }
->>>>>>> 52008b10f5f6f0c87a15a271af4318e218f184bc
-  };
+const validateForm = () => {
+  const newErrors = {};
 
-  const validateForm = () => {
-    const newErrors = {};
+  if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required';
+  if (!formData.email.trim()) newErrors.email = 'Email is required';
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
+    newErrors.email = 'Please enter a valid email address';
+  if (!formData.password) newErrors.password = 'Password is required';
+  else if (formData.password.length < 8)
+    newErrors.password = 'Password must be at least 8 characters';
+  if (!formData.confirmPassword)
+    newErrors.confirmPassword = 'Please confirm your password';
+  else if (formData.password !== formData.confirmPassword)
+    newErrors.confirmPassword = 'Passwords do not match';
+  if (!formData.agreeToTerms)
+    newErrors.agreeToTerms = 'You must agree to the terms';
 
-<<<<<<< HEAD
-    if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required';
-    if (!formData.email.trim()) newErrors.email = 'Email is required';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
-      newErrors.email = 'Please enter a valid email address';
-    if (!formData.password) newErrors.password = 'Password is required';
-    else if (formData.password.length < 8)
-      newErrors.password = 'Password must be at least 8 characters';
-    if (!formData.confirmPassword)
-      newErrors.confirmPassword = 'Please confirm your password';
-    else if (formData.password !== formData.confirmPassword)
-      newErrors.confirmPassword = 'Passwords do not match';
-    if (!formData.agreeToTerms)
-      newErrors.agreeToTerms = 'You must agree to the terms';
-=======
-    if (!formData?.fullName?.trim()) newErrors.fullName = 'Full name is required';
-    if (!formData?.email?.trim()) newErrors.email = 'Email is required';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData?.email)) newErrors.email = 'Invalid email address';
+  setErrors(newErrors);
+  return Object.keys(newErrors).length === 0;
+};
 
-    if (!formData?.password) newErrors.password = 'Password is required';
-    else if (formData?.password?.length < 8) newErrors.password = 'Password must be at least 8 characters';
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  if (!validateForm()) return;
 
-    if (!formData?.confirmPassword) newErrors.confirmPassword = 'Please confirm your password';
-    else if (formData?.password !== formData?.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
-
-    if (!formData?.agreeToTerms) newErrors.agreeToTerms = 'You must agree to the terms and conditions';
->>>>>>> 52008b10f5f6f0c87a15a271af4318e218f184bc
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-<<<<<<< HEAD
-    if (!validateForm()) return;
-
-    try {
-      setIsLoading(true);
-
-      // ✅ Create user in Supabase Auth
-      const { data, error } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: { full_name: formData.fullName }, // metadata
-          emailRedirectTo: `${window.location.origin}/dashboard`
-        }
-      });
-
-      if (error) throw error;
-
-      // ✅ Optionally create entry in public profile table
-      // await supabase.from('profiles').insert({
-      //   id: data.user.id,
-      //   full_name: formData.fullName,
-      //   email: formData.email
-      // });
-
-      alert('Account created successfully! Please verify your email before logging in.');
-      navigate('/login');
-    } catch (err) {
-      setErrors({ submit: err.message || 'Registration failed. Please try again.' });
-=======
-
-    if (!validateForm()) return;
-
+  try {
     setIsLoading(true);
 
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Save new user to localStorage
-      const users = JSON.parse(localStorage.getItem('users')) || [];
-
-      // Check if email already exists
-      const existingUser = users.find(u => u.email === formData.email);
-      if (existingUser) {
-        setErrors({ email: 'Email already registered. Please log in.' });
-        setIsLoading(false);
-        return;
+    // ✅ Create user in Supabase Auth
+    const { data, error } = await supabase.auth.signUp({
+      email: formData.email,
+      password: formData.password,
+      options: {
+        data: { full_name: formData.fullName }, // metadata
+        emailRedirectTo: `${window.location.origin}/dashboard`
       }
+    });
 
-      const newUser = {
-        id: Date.now(),
-        name: formData.fullName,
-        email: formData.email,
-        password: formData.password,
-        createdAt: new Date().toISOString()
-      };
+    if (error) throw error;
 
-      users.push(newUser);
-      localStorage.setItem('users', JSON.stringify(users));
+    // ✅ Optionally create entry in public profile table
+    // await supabase.from('profiles').insert({
+    //   id: data.user.id,
+    //   full_name: formData.fullName,
+    //   email: formData.email
+    // });
 
-      alert('Account created successfully! Please log in.');
-      navigate('/login');
-    } catch (error) {
-      setErrors({ submit: 'Registration failed. Please try again.' });
->>>>>>> 52008b10f5f6f0c87a15a271af4318e218f184bc
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    alert('Account created successfully! Please verify your email before logging in.');
+    navigate('/login');
+  } catch (err) {
+    setErrors({ submit: err.message || 'Registration failed. Please try again.' });
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const getPasswordStrengthColor = () => {
     if (passwordStrength <= 1) return 'bg-error';
@@ -222,35 +154,28 @@ const RegistrationForm = () => {
 
           {formData.password && (
             <div className="mt-2">
-              <div className="flex items-center space-x-2 mb-1">
-                <div className="flex-1 bg-muted rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full transition-all duration-300 ${getPasswordStrengthColor()}`}
-                    style={{ width: `${(passwordStrength / 5) * 100}%` }}
-                  />
-                </div>
-<<<<<<< HEAD
-                <span
-                  className={`text-xs font-medium ${
-                    passwordStrength <= 2
-                      ? 'text-error'
-                      : passwordStrength <= 3
-                      ? 'text-warning'
-                      : 'text-success'
-                  }`}
-                >
-=======
-                <span className={`text-xs font-medium ${
-                  passwordStrength <= 2 ? 'text-error' :
-                  passwordStrength <= 3 ? 'text-warning' : 'text-success'
-                }`}>
->>>>>>> 52008b10f5f6f0c87a15a271af4318e218f184bc
-                  {getPasswordStrengthText()}
-                </span>
-              </div>
-            </div>
-          )}
+      <div className="flex items-center space-x-2 mb-1">
+        <div className="flex-1 bg-muted rounded-full h-2">
+          <div
+            className={`h-2 rounded-full transition-all duration-300 ${getPasswordStrengthColor()}`}
+            style={{ width: `${(passwordStrength / 5) * 100}%` }}
+          />
         </div>
+        <span
+          className={`text-xs font-medium ${
+            passwordStrength <= 2
+              ? 'text-error'
+              : passwordStrength <= 3
+              ? 'text-warning'
+              : 'text-success'
+          }`}
+        >
+          {getPasswordStrengthText()}
+        </span>
+      </div>
+    </div>
+  )}
+</div>
 
         <Input
           label="Confirm Password"
